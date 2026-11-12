@@ -1,0 +1,111 @@
+{
+  "method": "synthetic Monte Carlo; not historical backtesting or a return forecast",
+  "seed": 42,
+  "paths_per_scenario": 10000,
+  "trades_per_path": 100,
+  "starting_capital_usd": 1.0,
+  "target_capital_usd": 1000.0,
+  "target_multiple": 1000.0,
+  "assumptions": {
+    "optimistic": {
+      "win_probability": 0.5,
+      "rug_probability": 0.05,
+      "average_win_return": 1.6,
+      "average_loss": 0.25,
+      "round_trip_friction": 0.03,
+      "position_fraction": 0.1
+    },
+    "base": {
+      "win_probability": 0.32,
+      "rug_probability": 0.12,
+      "average_win_return": 0.9,
+      "average_loss": 0.35,
+      "round_trip_friction": 0.05,
+      "position_fraction": 0.1
+    },
+    "adverse": {
+      "win_probability": 0.25,
+      "rug_probability": 0.2,
+      "average_win_return": 1.0,
+      "average_loss": 0.45,
+      "round_trip_friction": 0.08,
+      "position_fraction": 0.1
+    },
+    "parameter_uncertainty": {
+      "win_probability_range": [
+        0.2,
+        0.48
+      ],
+      "rug_probability_range": [
+        0.05,
+        0.25
+      ],
+      "average_win_return_range": [
+        0.3,
+        2.5
+      ],
+      "average_loss_range": [
+        0.15,
+        0.55
+      ],
+      "round_trip_friction_range": [
+        0.02,
+        0.12
+      ],
+      "position_fraction_range": [
+        0.05,
+        0.15
+      ]
+    }
+  },
+  "results": {
+    "optimistic": {
+      "probability_reach_target": 0.0678,
+      "probability_lose_80pct_or_more": 0.0,
+      "probability_end_below_50pct": 0.0,
+      "median_final_usd": 225.56748551426926,
+      "p05_final_usd": 48.2700411033083,
+      "p95_final_usd": 1031.6787309404046,
+      "mean_final_usd": 328.0557755856665,
+      "median_max_drawdown": 0.21122219989049137,
+      "worst_final_usd": 7.397738538108896,
+      "best_final_usd": 1234.0941732782956
+    },
+    "base": {
+      "probability_reach_target": 0.0,
+      "probability_lose_80pct_or_more": 0.1607,
+      "probability_end_below_50pct": 0.6526,
+      "median_final_usd": 0.38358670236509484,
+      "p05_final_usd": 0.12948450331004474,
+      "p95_final_usd": 1.1792985812177132,
+      "mean_final_usd": 0.4854109937310847,
+      "median_max_drawdown": 0.7206535419569127,
+      "worst_final_usd": 0.036404404069741526,
+      "best_final_usd": 4.125852222011002
+    },
+    "adverse": {
+      "probability_reach_target": 0.0,
+      "probability_lose_80pct_or_more": 0.963,
+      "probability_end_below_50pct": 0.999,
+      "median_final_usd": 0.05380617135519562,
+      "p05_final_usd": 0.01714623935204269,
+      "p95_final_usd": 0.17937120764770115,
+      "mean_final_usd": 0.06987776023134935,
+      "median_max_drawdown": 0.9525513643736372,
+      "worst_final_usd": 0.009010824794584081,
+      "best_final_usd": 0.7031988767115115
+    },
+    "parameter_uncertainty": {
+      "probability_reach_target": 0.0212,
+      "probability_lose_80pct_or_more": 0.2379,
+      "probability_end_below_50pct": 0.3787,
+      "median_final_usd": 1.0799774375710909,
+      "p05_final_usd": 0.025617610966472866,
+      "p95_final_usd": 187.17683926042795,
+      "mean_final_usd": 45.699417947124786,
+      "median_max_drawdown": 0.5987981339575916,
+      "worst_final_usd": 0.008553511318670479,
+      "best_final_usd": 1427.4591733772854
+    }
+  }
+}
