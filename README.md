@@ -117,6 +117,26 @@ Change thresholds in `.env` only after collecting and reviewing results. Do not 
 - **X posts/authors:** matching recent-search results, not proof of organic community support. Search results can miss posts and may include spam.
 - **RugCheck:** independent report snapshot. A missing report blocks alerts by default; a green/low score still does not make a token safe.
 
+## Model fitting status (important)
+
+The live alert score is currently a transparent rule-based filter, **not a trained predictive model**. An offline logistic-regression trainer is included, but no market model is being represented as trained until Meme Radar has collected real, timestamped candidate snapshots and their 15-minute outcomes.
+
+When the bot is running, it now records one frozen snapshot for every candidate with a valid DexScreener entry price, including candidates that fail the hand-built filters. At the 15-minute horizon it records the best matching pool price, or `no_pair` if no matching pool can be quoted. This avoids training only on alert winners. The result is a mark-to-market paper label, not an executable fill.
+
+After collecting data:
+
+```bash
+pip install -e ".[ml]"
+python scripts/export_training_data.py
+python scripts/train_model.py data/model_training.csv
+```
+
+The trainer sorts by signal timestamp, fits on the oldest 80%, and tests once on the newest 20%. Features are frozen at signal time; future price, outcome status and the label are never model inputs. It reports ROC AUC, average precision, Brier score, precision/recall and the existing heuristic score's ROC AUC for comparison. It refuses small or single-class chronological splits. The model is saved under `models/` and is **not automatically used to send alerts**.
+
+The minimum 200 rows is only a technical floor. For a serious evaluation, target at least 1,000 completed candidates, at least 100 positive and 100 negative labels in both chronological periods, and multiple launch weeks/market regimes. Review false positives and no-pool outcomes manually. Keep a later untouched period for final validation.
+
+A public 2026 research release contains 34,988 meme coins (10,468 Solana) and price/manipulation analysis. However, its high-frequency OHLCV is provided for a subset of 707 already high-performing tokens; training a launch-time success model directly on that subset would introduce severe selection bias. It is useful for studying manipulation, not a substitute for this bot's signal-time, all-candidate labels. See the [Zenodo release](https://doi.org/10.5281/zenodo.17830944) and [paper](https://arxiv.org/abs/2507.01963).
+
 ## Backtesting and the 10,000-path simulation
 
 ### A. Synthetic Monte Carlo stress test

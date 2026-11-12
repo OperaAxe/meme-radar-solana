@@ -43,13 +43,14 @@ def build_alert(candidate: Candidate, result: Any) -> str:
     reasons = "\n".join(f"• {r}" for r in result.reasons)
     social_links = "\n".join(result.social.post_urls[:3]) or "No post links returned"
     dex_url = pair.get("url") or f"https://dexscreener.com/solana/{candidate.mint}"
+    age_text = f"{age_mins:.1f}m" if age_mins is not None else "unavailable"
     return (
         "MEME RADAR — WATCHLIST ALERT\n\n"
         f"{base.get('name') or candidate.name} (${base.get('symbol') or candidate.symbol})\n"
         f"Mint: {candidate.mint}\n"
         f"Signal score: {result.score}/100 (heuristic, not a probability)\n"
         f"Liquidity: {money(liquidity)} | 5m volume: {money(volume)}\n"
-        f"5m swaps: {buys} buys / {sells} sells | Pair age: {age_mins:.1f}m\n"
+        f"5m swaps: {buys} buys / {sells} sells | Pair age: {age_text}\n"
         f"X: {result.social.posts} posts / {result.social.authors} authors\n"
         f"{risk_text}"
         + (f" | Flags: {', '.join(risk_names)}" if risk_names else "")
@@ -119,11 +120,42 @@ class MemeRadar:
                         log.info("Mint not found as the base token in DEX pair; skipping %s", candidate.mint)
                         return
                     pair = matching[0]
+                snapshot_ts = time.time()
                 social, risk = await asyncio.gather(
                     x_client.search_token_mentions(candidate.symbol, candidate.name, candidate.mint),
                     rug.summary(candidate.mint),
                 )
                 result = evaluate_signal(pair, social, risk, self.cfg)
+                # Record every candidate, not just alerts, to avoid training only
+                # on winners that passed the current hand-built filter.
+                entry_price = pair.get("priceUsd")
+                try:
+                    entry_price = float(entry_price)
+                except (TypeError, ValueError):
+                    entry_price = 0.0
+                from .scoring import pair_age_minutes
+                self.store.record_model_sample(
+                    candidate.mint,
+                    entry_price,
+                    {
+                        "signal_score": result.score,
+                        "qualified": int(result.qualified),
+                        "liquidity_usd": float((pair.get("liquidity") or {}).get("usd") or 0),
+                        "volume_5m_usd": float((pair.get("volume") or {}).get("m5") or 0),
+                        "buys_5m": int((((pair.get("txns") or {}).get("m5") or {}).get("buys") or 0)),
+                        "sells_5m": int((((pair.get("txns") or {}).get("m5") or {}).get("sells") or 0)),
+                        "txns_5m": int((((pair.get("txns") or {}).get("m5") or {}).get("buys") or 0)) + int((((pair.get("txns") or {}).get("m5") or {}).get("sells") or 0)),
+                        "price_change_5m_pct": float((pair.get("priceChange") or {}).get("m5") or 0),
+                        "pair_age_minutes": pair_age_minutes(pair),
+                        "rugcheck_score": risk.normalized_score,
+                        "rugcheck_available": int(risk.available),
+                        "rugcheck_danger_flag": int(any(str(x.get("level", "")).lower() in {"danger", "critical"} for x in risk.risks if isinstance(x, dict))),
+                        "x_posts": social.posts,
+                        "x_authors": social.authors,
+                        "x_engagement": social.engagement,
+                    },
+                    signal_ts=snapshot_ts,
+                )
                 self.store.mark_checked(candidate.mint)
                 if result.qualified:
                     await alerter.send(build_alert(candidate, result))
@@ -138,7 +170,7 @@ class MemeRadar:
                 log.warning("Candidate check %s failed: %s", candidate.mint, exc)
                 await asyncio.sleep(min(5 * (attempt + 1), 30))
 
-    async def _recheck_loop(self) -> None:
+    async def _recheck_loop(self, dex: DexScreenerClient) -> None:
         while True:
             await asyncio.sleep(60)
             for item in self.store.candidates_to_recheck():
@@ -147,6 +179,24 @@ class MemeRadar:
                     source=item["source"], source_url=item["source_url"],
                     first_seen_ts=item["first_seen"], raw=item["raw"],
                 ))
+            # Capture one fixed-horizon price per candidate for a leakage-safe
+            # paper dataset. An absent pool at the horizon is recorded as no_pair.
+            for sample in self.store.pending_model_outcomes(limit=50):
+                try:
+                    pairs = await dex.token_pairs(sample["mint"])
+                    matching = [p for p in pairs if (p.get("baseToken") or {}).get("address") == sample["mint"]]
+                    if not matching:
+                        self.store.record_model_outcome(sample["mint"], None, "no_pair")
+                        continue
+                    best = max(matching, key=lambda p: float((p.get("liquidity") or {}).get("usd") or 0))
+                    exit_price = float(best.get("priceUsd") or 0)
+                    if exit_price > 0:
+                        self.store.record_model_outcome(sample["mint"], exit_price, "quoted")
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    log.warning("15m outcome collection failed for %s: %s", sample["mint"], exc)
+                await asyncio.sleep(0.25)
 
     async def _worker(self, dex: DexScreenerClient, x_client: XSearchClient,
                       rug: RugCheckClient, alerter: TelegramAlerter) -> None:
@@ -174,7 +224,7 @@ class MemeRadar:
             tasks = [
                 asyncio.create_task(self._pumpportal_loop(), name="pumpportal"),
                 asyncio.create_task(self._x_discovery_loop(x_client), name="x-discovery"),
-                asyncio.create_task(self._recheck_loop(), name="candidate-recheck"),
+                asyncio.create_task(self._recheck_loop(dex), name="candidate-recheck"),
                 *[asyncio.create_task(self._worker(dex, x_client, rug, alerter), name=f"candidate-worker-{i}") for i in range(5)],
             ]
             try:
